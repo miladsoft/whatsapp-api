@@ -1,0 +1,48 @@
+services:
+  web:
+    build: .
+    container_name: whatsapp-api-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - BASE_URL=http://web:3000
+      - WWEBJS_DATA_DIR=/data/wwebjs
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    ports:
+      - "3000:3000"
+    volumes:
+      - wwebjs_data:/data/wwebjs
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    container_name: whatsapp-api-worker
+    restart: unless-stopped
+    command: npm run worker
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - BASE_URL=http://web:3000
+      - WWEBJS_DATA_DIR=/data/wwebjs
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    volumes:
+      - wwebjs_data:/data/wwebjs
+    depends_on:
+      - redis
+      - web
+
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp-api-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  wwebjs_data:
