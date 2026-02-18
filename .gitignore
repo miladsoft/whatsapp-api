@@ -21,7 +21,7 @@
 /build
 /.data/
 /data/
-
+.wwebjs_cache
 # misc
 .DS_Store
 *.pem
