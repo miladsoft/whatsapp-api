@@ -8,17 +8,10 @@ export const runtime = "nodejs";
 
 export async function GET(_request: NextRequest) {
   const defaultSessionId = process.env.DEFAULT_SESSION_ID || "main";
-  try {
-    await sessionManager.ensureSession(defaultSessionId);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to initialize session";
 
-    statusStore.upsertSession(defaultSessionId, {
-      status: "disconnected",
-      lastError: message,
-    });
-  }
+  // Non-blocking: start the default session and discover saved ones
+  sessionManager.startSession(defaultSessionId);
+  sessionManager.discoverSessions();
 
   return ok({
     defaultSessionId,

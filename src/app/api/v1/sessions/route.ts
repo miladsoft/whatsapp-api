@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
   }
 
   const defaultSessionId = process.env.DEFAULT_SESSION_ID || "main";
-  await sessionManager.ensureSession(defaultSessionId);
+  sessionManager.startSession(defaultSessionId);
+  sessionManager.discoverSessions();
 
   return withCors(
     request,

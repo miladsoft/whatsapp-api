@@ -9,7 +9,7 @@ function ensureWritableDirectory(dirPath: string) {
   fs.accessSync(dirPath, fs.constants.W_OK);
 }
 
-function resolveDataPath() {
+export function resolveDataPath() {
   const configuredPath = process.env.WWEBJS_DATA_DIR;
   const candidates = [
     configuredPath,

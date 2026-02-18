@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   try {
     const { sessionId } = schema.parse(await request.json());
 
-    await sessionManager.ensureSession(sessionId);
+    sessionManager.startSession(sessionId);
     statusStore.setActiveSession(sessionId);
 
     return ok({

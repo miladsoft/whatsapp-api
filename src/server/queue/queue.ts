@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 
 import { Queue } from "bullmq";
 
+import { statusStore } from "@/server/store/statusStore";
+
 export type SendTextJob = {
   type: "text";
   sessionId: string;
@@ -23,10 +25,28 @@ export type SendJobName = "send-text" | "send-media";
 
 export const queueName = "whatsapp-message-queue";
 
-export const redisConnection = {
-  url: process.env.REDIS_URL || "redis://localhost:6379",
-  maxRetriesPerRequest: null,
-};
+function parseRedisUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const options: Record<string, unknown> = {
+      host: parsed.hostname || "localhost",
+      port: parseInt(parsed.port || "6379", 10),
+      maxRetriesPerRequest: null,
+    };
+    if (parsed.password) options.password = decodeURIComponent(parsed.password);
+    if (parsed.username && parsed.username !== "default")
+      options.username = decodeURIComponent(parsed.username);
+    const db = parsed.pathname?.slice(1);
+    if (db) options.db = parseInt(db, 10);
+    return options;
+  } catch {
+    return { host: "localhost", port: 6379, maxRetriesPerRequest: null };
+  }
+}
+
+export const redisConnection = parseRedisUrl(
+  process.env.REDIS_URL || "redis://localhost:6379",
+);
 
 export class QueueUnavailableError extends Error {
   constructor(message = "Queue is unavailable") {
@@ -75,41 +95,65 @@ function getMessageQueue() {
   return messageQueue;
 }
 
-async function ensureQueueWorkerAvailable() {
+async function isQueueWorkerAvailable(): Promise<boolean> {
   try {
     const workers = await getMessageQueue().getWorkers();
-    if (workers.length === 0) {
-      throw new QueueUnavailableError(
-        "No active queue worker. Start the worker process (npm run dev:worker or npm run worker).",
-      );
-    }
-  } catch (error) {
-    if (error instanceof QueueUnavailableError) {
-      throw error;
-    }
-
-    throw classifyQueueError(error);
+    return workers.length > 0;
+  } catch {
+    return false;
   }
+}
+
+/**
+ * Fallback: send directly through the session manager when the queue is
+ * unavailable (no Redis or no worker process).  This makes the dev and single-
+ * process setups work out of the box.
+ */
+async function sendDirect(payload: SendJob): Promise<{ jobId: string }> {
+  // Lazy-import to avoid circular dependency at module level
+  const { sessionManager } = await import("@/server/whatsapp/manager");
+  const jobId = `direct-${crypto.randomUUID()}`;
+
+  if (payload.type === "text") {
+    const sent = await sessionManager.sendText(payload.sessionId, payload.to, payload.text);
+    statusStore.addJobLog({
+      jobId: sent.id._serialized,
+      sessionId: payload.sessionId,
+      type: "text",
+      status: "success",
+      message: `Sent text to ${payload.to} (direct, no queue)`,
+    });
+  } else {
+    const sent = await sessionManager.sendMedia(payload);
+    statusStore.addJobLog({
+      jobId: sent.id._serialized,
+      sessionId: payload.sessionId,
+      type: "media",
+      status: "success",
+      message: `Sent media to ${payload.to} (direct, no queue)`,
+    });
+  }
+
+  return { jobId };
 }
 
 export async function enqueueTextJob(payload: Omit<SendTextJob, "type">) {
   const jobId = crypto.randomUUID();
-  let job;
+  const fullPayload: SendTextJob = { ...payload, type: "text" };
 
+  // Try queue first; fall back to direct send
+  const workerReady = await isQueueWorkerAvailable();
+  if (!workerReady) {
+    console.info("[queue] No active worker detected — sending directly");
+    return sendDirect(fullPayload);
+  }
+
+  let job;
   try {
-    await ensureQueueWorkerAvailable();
-    job = await getMessageQueue().add(
-      "send-text",
-      {
-        ...payload,
-        type: "text",
-      },
-      {
-        jobId,
-      },
-    );
+    job = await getMessageQueue().add("send-text", fullPayload, { jobId });
   } catch (error) {
-    throw classifyQueueError(error);
+    console.warn("[queue] Queue add failed, falling back to direct send:", error);
+    return sendDirect(fullPayload);
   }
 
   return { jobId: job.id?.toString() ?? jobId };
@@ -117,22 +161,20 @@ export async function enqueueTextJob(payload: Omit<SendTextJob, "type">) {
 
 export async function enqueueMediaJob(payload: Omit<SendMediaJob, "type">) {
   const jobId = crypto.randomUUID();
-  let job;
+  const fullPayload: SendMediaJob = { ...payload, type: "media" };
 
+  const workerReady = await isQueueWorkerAvailable();
+  if (!workerReady) {
+    console.info("[queue] No active worker detected — sending directly");
+    return sendDirect(fullPayload);
+  }
+
+  let job;
   try {
-    await ensureQueueWorkerAvailable();
-    job = await getMessageQueue().add(
-      "send-media",
-      {
-        ...payload,
-        type: "media",
-      },
-      {
-        jobId,
-      },
-    );
+    job = await getMessageQueue().add("send-media", fullPayload, { jobId });
   } catch (error) {
-    throw classifyQueueError(error);
+    console.warn("[queue] Queue add failed, falling back to direct send:", error);
+    return sendDirect(fullPayload);
   }
 
   return { jobId: job.id?.toString() ?? jobId };

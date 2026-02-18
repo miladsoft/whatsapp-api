@@ -15,6 +15,10 @@ export const openApiDocument = {
   tags: [
     { name: "Messages" },
     { name: "Sessions" },
+    { name: "Chats" },
+    { name: "Contacts" },
+    { name: "Groups" },
+    { name: "Calls" },
   ],
   components: {
     securitySchemes: {
@@ -95,6 +99,117 @@ export const openApiDocument = {
           filename: { type: "string", example: "invoice.jpg" },
         },
         required: ["to", "mediaUrl"],
+      },
+      SendLocationRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          to: { type: "string", example: "15551234567" },
+          latitude: { type: "number", example: 37.7749 },
+          longitude: { type: "number", example: -122.4194 },
+          description: { type: "string", example: "San Francisco" },
+        },
+        required: ["to", "latitude", "longitude"],
+      },
+      SendPollRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          to: { type: "string", example: "15551234567" },
+          name: { type: "string", example: "Favorite color?" },
+          options: { type: "array", items: { type: "string" }, example: ["Red", "Blue", "Green"] },
+          allowMultipleAnswers: { type: "boolean", example: false },
+        },
+        required: ["to", "name", "options"],
+      },
+      SendContactRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          to: { type: "string", example: "15551234567" },
+          contactId: { type: "string", example: "15559876543@c.us" },
+        },
+        required: ["to", "contactId"],
+      },
+      SendReactionRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          messageId: { type: "string" },
+          reaction: { type: "string", example: "👍", description: "Emoji reaction. Empty string to remove." },
+        },
+        required: ["messageId", "reaction"],
+      },
+      MessageActionRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          messageId: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["reply", "forward", "delete", "star", "unstar", "react", "edit", "pin", "unpin", "downloadMedia"],
+          },
+          content: { type: "string", description: "For reply/edit actions" },
+          chatId: { type: "string", description: "For forward action" },
+          reaction: { type: "string", description: "For react action" },
+          everyone: { type: "boolean", description: "For delete action" },
+          duration: { type: "number", description: "For pin action (seconds)" },
+        },
+        required: ["messageId", "action"],
+      },
+      ChatActionRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          chatId: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["sendSeen", "archive", "unarchive", "mute", "unmute", "pin", "unpin", "delete", "clearMessages", "sendTyping", "sendRecording", "clearState"],
+          },
+          duration: { type: "number", description: "Mute duration in seconds" },
+        },
+        required: ["chatId", "action"],
+      },
+      GroupActionRequest: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["addParticipants", "removeParticipants", "promoteParticipants", "demoteParticipants", "setSubject", "setDescription", "getInviteCode", "revokeInvite", "leave"],
+          },
+          participants: { type: "array", items: { type: "string" }, description: "For participant actions" },
+          subject: { type: "string", description: "For setSubject" },
+          description: { type: "string", description: "For setDescription" },
+        },
+        required: ["action"],
+      },
+      Chat: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          isGroup: { type: "boolean" },
+          unreadCount: { type: "number" },
+          timestamp: { type: "number" },
+          lastMessage: { type: "string" },
+          archived: { type: "boolean" },
+          pinned: { type: "boolean" },
+        },
+      },
+      Contact: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          pushname: { type: "string" },
+          number: { type: "string" },
+          isUser: { type: "boolean" },
+          isGroup: { type: "boolean" },
+          isBlocked: { type: "boolean" },
+          isMyContact: { type: "boolean" },
+          isBusiness: { type: "boolean" },
+        },
       },
     },
   },
@@ -428,6 +543,294 @@ export const openApiDocument = {
               },
             },
           },
+        },
+      },
+    },
+    "/api/v1/messages/location": {
+      post: {
+        tags: ["Messages"],
+        summary: "Send a location message",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/SendLocationRequest" } } },
+        },
+        responses: {
+          "200": { description: "Sent", content: { "application/json": { schema: { $ref: "#/components/schemas/QueueResponse" } } } },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/messages/poll": {
+      post: {
+        tags: ["Messages"],
+        summary: "Send a poll",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/SendPollRequest" } } },
+        },
+        responses: {
+          "200": { description: "Sent", content: { "application/json": { schema: { $ref: "#/components/schemas/QueueResponse" } } } },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/messages/contact": {
+      post: {
+        tags: ["Messages"],
+        summary: "Send a contact card",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/SendContactRequest" } } },
+        },
+        responses: {
+          "200": { description: "Sent", content: { "application/json": { schema: { $ref: "#/components/schemas/QueueResponse" } } } },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/messages/reaction": {
+      post: {
+        tags: ["Messages"],
+        summary: "React to a message",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/SendReactionRequest" } } },
+        },
+        responses: {
+          "200": { description: "Reacted", content: { "application/json": { schema: { $ref: "#/components/schemas/QueueResponse" } } } },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/messages/actions": {
+      post: {
+        tags: ["Messages"],
+        summary: "Perform a message action (reply, forward, delete, star, react, edit, pin, download)",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/MessageActionRequest" } } },
+        },
+        responses: {
+          "200": { description: "Action performed", content: { "application/json": { schema: { $ref: "#/components/schemas/QueueResponse" } } } },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/chats": {
+      get: {
+        tags: ["Chats"],
+        summary: "List all chats",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "sessionId", in: "query", schema: { type: "string" }, description: "Session ID (defaults to active)" },
+        ],
+        responses: {
+          "200": {
+            description: "Chats list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ok: { type: "boolean", enum: [true] },
+                    data: {
+                      type: "object",
+                      properties: { chats: { type: "array", items: { $ref: "#/components/schemas/Chat" } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/chats/{id}/messages": {
+      get: {
+        tags: ["Chats"],
+        summary: "Get messages from a specific chat",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "sessionId", in: "query", schema: { type: "string" } },
+          { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
+        ],
+        responses: {
+          "200": { description: "Chat messages" },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/chats/actions": {
+      post: {
+        tags: ["Chats"],
+        summary: "Perform a chat action (archive, mute, pin, sendSeen, etc.)",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ChatActionRequest" } } },
+        },
+        responses: {
+          "200": { description: "Action performed" },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/contacts": {
+      get: {
+        tags: ["Contacts"],
+        summary: "List all contacts",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "sessionId", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": {
+            description: "Contacts list",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    ok: { type: "boolean", enum: [true] },
+                    data: {
+                      type: "object",
+                      properties: { contacts: { type: "array", items: { $ref: "#/components/schemas/Contact" } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/contacts/{id}": {
+      get: {
+        tags: ["Contacts"],
+        summary: "Get a specific contact with profile picture and about",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "sessionId", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Contact details" },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/groups": {
+      post: {
+        tags: ["Groups"],
+        summary: "Create a new group",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  sessionId: { type: "string" },
+                  name: { type: "string" },
+                  participants: { type: "array", items: { type: "string" } },
+                },
+                required: ["name", "participants"],
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Group created" },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/groups/{id}": {
+      get: {
+        tags: ["Groups"],
+        summary: "Get group info (name, description, participants, admins)",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "sessionId", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Group info" },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/groups/{id}/actions": {
+      post: {
+        tags: ["Groups"],
+        summary: "Manage group (add/remove participants, set subject/description, invite codes, leave)",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+        ],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/GroupActionRequest" } } },
+        },
+        responses: {
+          "200": { description: "Action performed" },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+    },
+    "/api/v1/calls": {
+      get: {
+        tags: ["Calls"],
+        summary: "Get recent incoming calls",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          { name: "sessionId", in: "query", schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Calls list" },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+        },
+      },
+      post: {
+        tags: ["Calls"],
+        summary: "Reject an incoming call",
+        security: [{ ApiKeyAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  sessionId: { type: "string" },
+                  callId: { type: "string" },
+                },
+                required: ["callId"],
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Call rejected" },
+          "400": { description: "Invalid payload", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
+          "401": { description: "Invalid API key", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
         },
       },
     },

@@ -21,7 +21,7 @@ export async function GET(
   }
 
   const { id } = await context.params;
-  await sessionManager.ensureSession(id);
+  sessionManager.startSession(id);
 
   return withCors(
     request,

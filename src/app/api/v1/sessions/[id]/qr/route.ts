@@ -22,7 +22,9 @@ export async function GET(
   }
 
   const { id } = await context.params;
-  await sessionManager.ensureSession(id);
+
+  // Start session without blocking — QR arrives via event
+  sessionManager.startSession(id);
 
   const qr = sessionManager.getQrString(id);
   if (!qr) {

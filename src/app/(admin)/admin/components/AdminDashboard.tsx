@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ChatPanel } from "@/app/(admin)/admin/components/ChatPanel";
 import { QrViewer } from "@/app/(admin)/admin/components/QrViewer";
 import { SendTestForm } from "@/app/(admin)/admin/components/SendTestForm";
 import { StatusBadge } from "@/app/(admin)/admin/components/StatusBadge";
@@ -366,6 +367,12 @@ export function AdminDashboard() {
             {!state?.jobLogs?.length ? <li className="text-zinc-400">No jobs yet.</li> : null}
           </ul>
         </div>
+      </section>
+
+      {/* ---- Chat Panel ---- */}
+      <section>
+        <h2 className="mb-3 text-lg font-medium">Chat</h2>
+        <ChatPanel sessionId={selectedSessionId} />
       </section>
 
       <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5">

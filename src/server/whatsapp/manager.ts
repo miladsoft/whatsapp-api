@@ -1,7 +1,9 @@
+import fs from "node:fs";
+
 import { MessageMedia } from "whatsapp-web.js";
 
 import { statusStore } from "@/server/store/statusStore";
-import { createWwebjsClient } from "@/server/whatsapp/client";
+import { createWwebjsClient, resolveDataPath } from "@/server/whatsapp/client";
 import { toWhatsAppChatId } from "@/server/whatsapp/phone";
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
@@ -16,6 +18,19 @@ interface SessionContext {
 
 class SessionManager {
   private readonly sessions = new Map<string, SessionContext>();
+
+  private isBrowserLockError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes("The browser is already running for");
+  }
+
+  private normalizeInitError(error: unknown) {
+    const raw = error instanceof Error ? error.message : String(error);
+    if (this.isBrowserLockError(error)) {
+      return `${raw} Stop other Next/worker processes using this session, then retry.`;
+    }
+    return raw;
+  }
 
   private getDefaultSessionId() {
     return process.env.DEFAULT_SESSION_ID || "main";
@@ -139,7 +154,8 @@ class SessionManager {
         })
         .catch((error) => {
           context.isInitialized = false;
-          throw error;
+          const message = this.normalizeInitError(error);
+          throw new Error(message);
         })
         .finally(() => {
         context.initializePromise = undefined;
@@ -148,6 +164,54 @@ class SessionManager {
 
     await context.initializePromise;
     return context.client;
+  }
+
+  startSession(sessionId = this.getDefaultSessionId()) {
+    const context = this.getOrCreateContext(sessionId);
+
+    if (context.isInitialized || context.initializePromise) {
+      return;
+    }
+
+    context.initializePromise = context.client
+      .initialize()
+      .then(() => {
+        context.isInitialized = true;
+      })
+      .catch((error) => {
+        context.isInitialized = false;
+        const message = this.normalizeInitError(error);
+        statusStore.upsertSession(sessionId, {
+          status: "disconnected",
+          lastError: message,
+        });
+      })
+      .finally(() => {
+        context.initializePromise = undefined;
+      });
+  }
+
+  discoverSessions() {
+    const dataPath = resolveDataPath();
+
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(dataPath, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("session-"))
+        .map((entry) => entry.name.replace(/^session-/, ""));
+    } catch {
+      return [] as string[];
+    }
+
+    const discovered = Array.from(new Set(entries));
+    for (const sessionId of discovered) {
+      this.getOrCreateContext(sessionId);
+      statusStore.upsertSession(sessionId, {
+        status: statusStore.getSession(sessionId)?.status ?? "unknown",
+      });
+    }
+
+    return discovered;
   }
 
   getSessionState(sessionId: string) {
@@ -197,7 +261,8 @@ class SessionManager {
       })
       .catch((error) => {
         replacementContext.isInitialized = false;
-        throw error;
+        const message = this.normalizeInitError(error);
+        throw new Error(message);
       })
       .finally(() => {
         replacementContext.initializePromise = undefined;
@@ -252,6 +317,279 @@ class SessionManager {
     return client.sendMessage(chatId, media, {
       caption: params.caption,
     });
+  }
+
+  async getChats(sessionId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chats = await (client as any).getChats();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return chats.map((chat: any) => ({
+      id: chat.id?._serialized ?? String(chat.id),
+      name: chat.name || chat.formattedTitle || chat.id?.user || "Unknown",
+      isGroup: !!chat.isGroup,
+      unreadCount: chat.unreadCount ?? 0,
+      timestamp: (chat.timestamp ?? 0) * 1000,
+      lastMessage: chat.lastMessage
+        ? {
+            body: chat.lastMessage.body ?? "",
+            type: chat.lastMessage.type ?? "chat",
+            timestamp: (chat.lastMessage.timestamp ?? chat.timestamp ?? 0) * 1000,
+            fromMe: !!chat.lastMessage.fromMe,
+          }
+        : null,
+      archived: !!chat.archived,
+      pinned: !!chat.pinned,
+      muteExpiration: chat.muteExpiration,
+    }));
+  }
+
+  async getChatMessages(sessionId: string, chatId: string, limit = 50) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messages = await (chat as any).fetchMessages({ limit });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return messages.map((msg: any) => ({
+      id: msg.id?._serialized ?? String(msg.id),
+      sessionId,
+      from: msg.from,
+      to: msg.to,
+      fromMe: !!msg.fromMe,
+      body: msg.body ?? "",
+      type: msg.type ?? "chat",
+      timestamp: msg.timestamp ? msg.timestamp * 1000 : Date.now(),
+      hasMedia: !!msg.hasMedia,
+      mimetype: msg._data?.mimetype,
+      filename: msg._data?.filename,
+      isForwarded: !!msg.isForwarded,
+      isStarred: !!msg.isStarred,
+      isStatus: !!msg.isStatus,
+      ack: msg.ack ?? 0,
+      author: msg.author,
+      mentionedIds: msg.mentionedIds ?? [],
+      hasQuotedMsg: !!msg.hasQuotedMsg,
+      quotedMsgId: msg.hasQuotedMsg ? msg._data?.quotedStanzaID : undefined,
+      location: msg.location
+        ? {
+            latitude: msg.location.latitude,
+            longitude: msg.location.longitude,
+            description: msg.location.description,
+          }
+        : undefined,
+      vCards: msg.vCards ?? [],
+    }));
+  }
+
+  async sendSeen(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (client as any).sendSeen === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (client as any).sendSeen(chatId);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).sendSeen();
+  }
+
+  async archiveChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).archive();
+  }
+
+  async unarchiveChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).unarchive();
+  }
+
+  async muteChat(sessionId: string, chatId: string, unmuteDate?: Date) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).mute(unmuteDate);
+  }
+
+  async unmuteChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).unmute();
+  }
+
+  async pinChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).pin();
+  }
+
+  async unpinChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).unpin();
+  }
+
+  async deleteChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (client as any).deleteChat === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (client as any).deleteChat(chatId);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).delete?.();
+  }
+
+  async clearChatMessages(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).clearMessages();
+  }
+
+  async sendTyping(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).sendStateTyping();
+  }
+
+  async sendRecording(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).sendStateRecording();
+  }
+
+  async clearChatState(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).clearState();
+  }
+
+  async replyToMessage(sessionId: string, messageId: string, content: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (msg as any).reply(content);
+  }
+
+  async forwardMessage(sessionId: string, messageId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (msg as any).forward(chatId);
+  }
+
+  async deleteMessage(sessionId: string, messageId: string, everyone = false) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (msg as any).delete(everyone);
+  }
+
+  async starMessage(sessionId: string, messageId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (msg as any).star();
+  }
+
+  async unstarMessage(sessionId: string, messageId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (msg as any).unstar();
+  }
+
+  async reactToMessage(sessionId: string, messageId: string, reaction: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (msg as any).react(reaction);
+  }
+
+  async editMessage(sessionId: string, messageId: string, content: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (msg as any).edit === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (msg as any).edit(content);
+    }
+    throw new Error("Edit is not supported for this message/client version");
+  }
+
+  async pinMessage(sessionId: string, messageId: string, duration = 604800) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (msg as any).pin === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (msg as any).pin(duration);
+    }
+    return null;
+  }
+
+  async unpinMessage(sessionId: string, messageId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (msg as any).unpin === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (msg as any).unpin();
+    }
+    return null;
+  }
+
+  async downloadMedia(sessionId: string, messageId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = await (client as any).getMessageById(messageId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const media = await (msg as any).downloadMedia();
+
+    if (!media?.data || !media?.mimetype) {
+      throw new Error("Media not available");
+    }
+
+    return {
+      mimetype: media.mimetype,
+      filename: media.filename,
+      dataUrl: `data:${media.mimetype};base64,${media.data}`,
+    };
   }
 
   async captureSessionScreenshot(sessionId: string) {
