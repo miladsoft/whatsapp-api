@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
     return ok({ messages });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to get messages";
+    if (message.includes("The browser is already running for")) {
+      return ok({ messages: [], warning: message });
+    }
     return fail("BAD_REQUEST", message, 400);
   }
 }

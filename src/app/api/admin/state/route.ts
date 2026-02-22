@@ -8,14 +8,15 @@ export const runtime = "nodejs";
 
 export async function GET(_request: NextRequest) {
   const defaultSessionId = process.env.DEFAULT_SESSION_ID || "main";
+  const activeSessionId = statusStore.getActiveSession() || defaultSessionId;
 
-  // Non-blocking: start the default session and discover saved ones
-  sessionManager.startSession(defaultSessionId);
+  // Non-blocking: start active session and discover saved ones
+  sessionManager.startSession(activeSessionId);
   sessionManager.discoverSessions();
 
   return ok({
     defaultSessionId,
-    activeSessionId: statusStore.getActiveSession(),
+    activeSessionId,
     sessions: sessionManager.getAllSessionStates(),
     jobLogs: statusStore.getJobLogs(30),
   });

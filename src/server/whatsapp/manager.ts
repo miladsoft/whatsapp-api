@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 
 import { MessageMedia } from "whatsapp-web.js";
 
@@ -30,6 +32,65 @@ class SessionManager {
       return `${raw} Stop other Next/worker processes using this session, then retry.`;
     }
     return raw;
+  }
+
+  private tryReleaseSessionBrowserLock(sessionId: string) {
+    try {
+      spawnSync("pkill", ["-f", `session-${sessionId}`], {
+        stdio: "ignore",
+      });
+    } catch {
+      // ignore recovery errors; caller will still receive the original init error
+    }
+
+    try {
+      const sessionDir = path.join(resolveDataPath(), `session-${sessionId}`);
+      const lockCandidates = [
+        path.join(sessionDir, "SingletonLock"),
+        path.join(sessionDir, "SingletonCookie"),
+        path.join(sessionDir, "SingletonSocket"),
+      ];
+
+      for (const filePath of lockCandidates) {
+        if (fs.existsSync(filePath)) {
+          fs.rmSync(filePath, { force: true });
+        }
+      }
+    } catch {
+      // ignore stale lock cleanup errors
+    }
+  }
+
+  private async initializeWithRecovery(sessionId: string, context: SessionContext) {
+    try {
+      await context.client.initialize();
+      return;
+    } catch (error) {
+      if (!this.isBrowserLockError(error)) {
+        throw error;
+      }
+
+      this.tryReleaseSessionBrowserLock(sessionId);
+
+      try {
+        await context.client.destroy();
+      } catch {
+        // ignore
+      }
+
+      const replacementClient = createWwebjsClient(sessionId);
+      const replacementContext: SessionContext = {
+        reconnectAttempts: context.reconnectAttempts,
+        isInitialized: false,
+        client: replacementClient,
+      };
+      this.attachEvents(sessionId, replacementContext);
+      this.sessions.set(sessionId, replacementContext);
+
+      await replacementClient.initialize();
+      replacementContext.isInitialized = true;
+      return;
+    }
   }
 
   private getDefaultSessionId() {
@@ -147,8 +208,7 @@ class SessionManager {
     }
 
     if (!context.initializePromise) {
-      context.initializePromise = context.client
-        .initialize()
+      context.initializePromise = this.initializeWithRecovery(sessionId, context)
         .then(() => {
           context.isInitialized = true;
         })
@@ -173,8 +233,7 @@ class SessionManager {
       return;
     }
 
-    context.initializePromise = context.client
-      .initialize()
+    context.initializePromise = this.initializeWithRecovery(sessionId, context)
       .then(() => {
         context.isInitialized = true;
       })
@@ -254,8 +313,10 @@ class SessionManager {
 
     this.attachEvents(sessionId, replacementContext);
     this.sessions.set(sessionId, replacementContext);
-    replacementContext.initializePromise = replacementClient
-      .initialize()
+    replacementContext.initializePromise = this.initializeWithRecovery(
+      sessionId,
+      replacementContext,
+    )
       .then(() => {
         replacementContext.isInitialized = true;
       })

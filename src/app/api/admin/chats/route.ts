@@ -17,6 +17,9 @@ export async function GET(request: NextRequest) {
     return ok({ chats });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to get chats";
+    if (message.includes("The browser is already running for")) {
+      return ok({ chats: [], warning: message });
+    }
     return fail("BAD_REQUEST", message, 400);
   }
 }
