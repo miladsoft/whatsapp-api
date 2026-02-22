@@ -551,6 +551,78 @@ class SessionManager {
     return (chat as any).clearState();
   }
 
+  async addGroupParticipants(sessionId: string, chatId: string, participants: string[]) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).addParticipants(participants.map((p) => toWhatsAppChatId(p)));
+  }
+
+  async removeGroupParticipants(sessionId: string, chatId: string, participants: string[]) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).removeParticipants(participants.map((p) => toWhatsAppChatId(p)));
+  }
+
+  async promoteGroupParticipants(sessionId: string, chatId: string, participants: string[]) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).promoteParticipants(participants.map((p) => toWhatsAppChatId(p)));
+  }
+
+  async demoteGroupParticipants(sessionId: string, chatId: string, participants: string[]) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).demoteParticipants(participants.map((p) => toWhatsAppChatId(p)));
+  }
+
+  async setGroupSubject(sessionId: string, chatId: string, subject: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).setSubject(subject);
+  }
+
+  async setGroupDescription(sessionId: string, chatId: string, description: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).setDescription(description);
+  }
+
+  async getGroupInviteCode(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).getInviteCode();
+  }
+
+  async revokeGroupInvite(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).revokeInvite();
+  }
+
+  async leaveGroup(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (chat as any).leave();
+  }
+
   async replyToMessage(sessionId: string, messageId: string, content: string) {
     const client = await this.ensureSession(sessionId);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
