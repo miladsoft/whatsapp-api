@@ -647,36 +647,112 @@ class SessionManager {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const messages = await (chat as any).fetchMessages({ limit });
 
+    // Build reactions from _data (synchronous, reliable for fetched messages)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return messages.map((msg: any) => ({
-      id: msg.id?._serialized ?? String(msg.id),
-      sessionId,
-      from: msg.from,
-      to: msg.to,
-      fromMe: !!msg.fromMe,
-      body: msg.body ?? "",
-      type: msg.type ?? "chat",
-      timestamp: msg.timestamp ? msg.timestamp * 1000 : Date.now(),
-      hasMedia: !!msg.hasMedia,
-      mimetype: msg._data?.mimetype,
-      filename: msg._data?.filename,
-      isForwarded: !!msg.isForwarded,
-      isStarred: !!msg.isStarred,
-      isStatus: !!msg.isStatus,
-      ack: msg.ack ?? 0,
-      author: msg.author,
-      mentionedIds: msg.mentionedIds ?? [],
-      hasQuotedMsg: !!msg.hasQuotedMsg,
-      quotedMsgId: msg.hasQuotedMsg ? msg._data?.quotedStanzaID : undefined,
-      location: msg.location
-        ? {
-            latitude: msg.location.latitude,
-            longitude: msg.location.longitude,
-            description: msg.location.description,
+    const extractReactions = (msg: any) => {
+      try {
+        // _data.reactions is an array of reaction aggregation objects
+        const rawReactions = msg._data?.reactions;
+        if (!rawReactions || !Array.isArray(rawReactions)) return [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return rawReactions.flatMap((group: any) => {
+          // Each group: { aggregateEmoji, senders: [{id, reaction, timestamp, ...}] }
+          if (group.senders && Array.isArray(group.senders)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return group.senders.map((s: any) => ({
+              emoji: s.reaction || group.aggregateEmoji,
+              senderId: s.id || s.senderId || "",
+              timestamp: s.timestamp,
+            }));
           }
-        : undefined,
-      vCards: msg.vCards ?? [],
-    }));
+          // Sometimes reactions is a flat array of {id, msgId, reaction, senderTimestampMs, senderId, ...}
+          if (group.reaction && group.senderId) {
+            return [{ emoji: group.reaction, senderId: group.senderId, timestamp: group.senderTimestampMs }];
+          }
+          return [];
+        });
+      } catch {
+        return [];
+      }
+    };
+
+    // Also try getReactions() for messages that explicitly have hasReaction flag
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const asyncReactionsMap = new Map<string, any[]>();
+    await Promise.all(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages.map(async (msg: any) => {
+        if (msg.hasReaction) {
+          try {
+            const reactionLists = await msg.getReactions();
+            const msgId = msg.id?._serialized ?? String(msg.id);
+            const flat = reactionLists.flatMap(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (rl: any) =>
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (rl.senders || []).map((s: any) => ({
+                  emoji: s.reaction,
+                  senderId: s.senderId,
+                  timestamp: s.timestamp,
+                }))
+            );
+            if (flat.length > 0) asyncReactionsMap.set(msgId, flat);
+          } catch {
+            /* ignore */
+          }
+        }
+      })
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return messages.map((msg: any) => {
+      const msgId = msg.id?._serialized ?? String(msg.id);
+      // Prefer async reactions (getReactions) over _data.reactions, merge both
+      const fromData = extractReactions(msg);
+      const fromAsync = asyncReactionsMap.get(msgId) || [];
+      // Deduplicate by senderId+emoji
+      const seen = new Set<string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allReactions: any[] = [];
+      for (const r of [...fromAsync, ...fromData]) {
+        const key = `${r.senderId}:${r.emoji}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allReactions.push(r);
+        }
+      }
+
+      return {
+        id: msgId,
+        sessionId,
+        from: msg.from,
+        to: msg.to,
+        fromMe: !!msg.fromMe,
+        body: msg.body ?? "",
+        type: msg.type ?? "chat",
+        timestamp: msg.timestamp ? msg.timestamp * 1000 : Date.now(),
+        hasMedia: !!msg.hasMedia,
+        mimetype: msg._data?.mimetype,
+        filename: msg._data?.filename,
+        isForwarded: !!msg.isForwarded,
+        isStarred: !!msg.isStarred,
+        isStatus: !!msg.isStatus,
+        ack: msg.ack ?? 0,
+        author: msg.author,
+        mentionedIds: msg.mentionedIds ?? [],
+        hasQuotedMsg: !!msg.hasQuotedMsg,
+        quotedMsgId: msg.hasQuotedMsg ? msg._data?.quotedStanzaID : undefined,
+        reactions: allReactions,
+        location: msg.location
+          ? {
+              latitude: msg.location.latitude,
+              longitude: msg.location.longitude,
+              description: msg.location.description,
+            }
+          : undefined,
+        vCards: msg.vCards ?? [],
+      };
+    });
   }
 
   async sendSeen(sessionId: string, chatId: string) {
