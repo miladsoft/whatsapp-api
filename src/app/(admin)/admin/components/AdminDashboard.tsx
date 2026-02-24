@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { BulkMessageForm } from "@/app/(admin)/admin/components/BulkMessageForm";
+import { BulkTextNumbersForm } from "@/app/(admin)/admin/components/BulkTextNumbersForm";
 import { ChatPanel } from "@/app/(admin)/admin/components/ChatPanel";
 import { QrViewer } from "@/app/(admin)/admin/components/QrViewer";
 import { SendTestForm } from "@/app/(admin)/admin/components/SendTestForm";
@@ -29,7 +30,7 @@ type ApiSuccess<T> = {
 };
 
 type ApiPayload<T> = ApiSuccess<T> | ApiFailure;
-type AdminTab = "send" | "bulk" | "chat" | "screenshot";
+type AdminTab = "send" | "bulk" | "bulkText" | "chat" | "screenshot";
 
 function getApiErrorMessage<T>(payload: ApiPayload<T> | null, fallback: string) {
   if (payload && payload.ok === false && payload.error?.message) {
@@ -363,6 +364,19 @@ export function AdminDashboard() {
             </span>
           </button>
           <button
+            onClick={() => setActiveTab("bulkText")}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "bulkText"
+                ? "border-emerald-400/60 bg-emerald-600/20 text-emerald-100"
+                : "border-emerald-900/50 bg-zinc-900/70 text-emerald-200/80 hover:bg-emerald-900/40"
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
+              Bulk From Text
+            </span>
+          </button>
+          <button
             onClick={() => setActiveTab("chat")}
             className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
               activeTab === "chat"
@@ -428,6 +442,38 @@ export function AdminDashboard() {
         <section className="grid gap-4 lg:grid-cols-12">
           <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-8">
             <BulkMessageForm
+              sessionId={selectedSessionId}
+              onSent={async () => {
+                await loadState();
+              }}
+            />
+          </div>
+
+          <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-4">
+            <h2 className="mb-3 font-medium">Recent Jobs</h2>
+            <ul className="max-h-[26rem] space-y-2 overflow-auto pr-1 text-sm">
+              {(state?.jobLogs ?? []).map((job) => (
+                <li
+                  key={`${job.jobId}-${job.createdAt}`}
+                  className="rounded-md border border-zinc-700/60 bg-zinc-800/70 p-2.5"
+                >
+                  <p className="font-medium">
+                    {job.type} · {job.status}
+                  </p>
+                  <p className="text-zinc-400">session: {job.sessionId}</p>
+                  <p className="text-zinc-400">{job.message}</p>
+                </li>
+              ))}
+              {!state?.jobLogs?.length ? <li className="text-zinc-400">No jobs yet.</li> : null}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "bulkText" ? (
+        <section className="grid gap-4 lg:grid-cols-12">
+          <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-8">
+            <BulkTextNumbersForm
               sessionId={selectedSessionId}
               onSent={async () => {
                 await loadState();
