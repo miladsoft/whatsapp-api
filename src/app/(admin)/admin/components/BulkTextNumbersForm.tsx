@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type BulkTextNumbersFormProps = {
   sessionId: string;
   onSent?: () => Promise<void> | void;
 };
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png"];
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
 
 function normalizeDigits(value: string) {
   return value.replace(/[^\d]/g, "");
@@ -44,16 +47,42 @@ function parseNumberLines(raw: string) {
 export function BulkTextNumbersForm({ sessionId, onSent }: BulkTextNumbersFormProps) {
   const [numbersText, setNumbersText] = useState("");
   const [messageText, setMessageText] = useState("Hello from WhatsApp API service");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const parsed = useMemo(() => parseNumberLines(numbersText), [numbersText]);
 
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(imageFile);
+    setImagePreviewUrl(objectUrl);
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [imageFile]);
+
+  function validateImageFile(file: File) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      return "Only JPG and PNG images are allowed";
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      return "Image size must be 5MB or less";
+    }
+    return null;
+  }
+
   async function sendToAll() {
-    if (!messageText.trim()) {
-      setError("Message text is required");
+    if (!messageText.trim() && !imageFile) {
+      setError("Message text or photo is required");
       return;
     }
 
@@ -69,17 +98,31 @@ export function BulkTextNumbersForm({ sessionId, onSent }: BulkTextNumbersFormPr
     try {
       const outcomes = await Promise.allSettled(
         parsed.validNumbers.map(async (to) => {
-          const response = await fetch("/api/admin/send-test", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              sessionId,
-              to,
-              text: messageText,
-            }),
-          });
+          const response = imageFile
+            ? await (async () => {
+                const formData = new FormData();
+                formData.append("sessionId", sessionId);
+                formData.append("chatId", to);
+                if (messageText.trim()) {
+                  formData.append("caption", messageText.trim());
+                }
+                formData.append("file", imageFile);
+                return fetch("/api/admin/messages/media", {
+                  method: "POST",
+                  body: formData,
+                });
+              })()
+            : await fetch("/api/admin/send-test", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  sessionId,
+                  to,
+                  text: messageText,
+                }),
+              });
 
           const payload = await response.json().catch(() => null);
           if (!response.ok || !payload?.ok) {
@@ -163,7 +206,7 @@ export function BulkTextNumbersForm({ sessionId, onSent }: BulkTextNumbersFormPr
 
       <div>
         <label htmlFor="bulk-text-message" className="mb-1.5 block text-sm font-medium text-emerald-100">
-          Message
+          Message / Caption
         </label>
         <textarea
           id="bulk-text-message"
@@ -171,6 +214,74 @@ export function BulkTextNumbersForm({ sessionId, onSent }: BulkTextNumbersFormPr
           onChange={(event) => setMessageText(event.target.value)}
           className="min-h-24 w-full rounded-md border border-emerald-900/60 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500"
         />
+      </div>
+
+      <div className="rounded-md border border-emerald-900/60 bg-emerald-950/20 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              if (!file) {
+                setImageFile(null);
+                return;
+              }
+
+              const validationError = validateImageFile(file);
+              if (validationError) {
+                setError(validationError);
+                setImageFile(null);
+                if (imageInputRef.current) {
+                  imageInputRef.current.value = "";
+                }
+                return;
+              }
+
+              setError(null);
+              setImageFile(file);
+            }}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            className="rounded-md border border-emerald-700/50 bg-emerald-900/40 px-2.5 py-1.5 text-xs font-medium text-emerald-100 transition-colors hover:bg-emerald-800/50"
+          >
+            {imageFile ? "Change Photo" : "Attach Photo"}
+          </button>
+          {imageFile ? (
+            <button
+              type="button"
+              onClick={() => {
+                setImageFile(null);
+                if (imageInputRef.current) {
+                  imageInputRef.current.value = "";
+                }
+              }}
+              className="rounded-md border border-red-700/50 bg-red-950/40 px-2.5 py-1.5 text-xs font-medium text-red-200 transition-colors hover:bg-red-900/50"
+            >
+              Remove
+            </button>
+          ) : null}
+          <span className="text-xs text-emerald-200/80">Optional: send image with optional caption</span>
+        </div>
+        {imageFile ? (
+          <div className="mt-2 rounded-md border border-emerald-900/60 bg-zinc-900/50 p-2">
+            {imagePreviewUrl ? (
+              <img
+                src={imagePreviewUrl}
+                alt="Selected preview"
+                className="mb-2 max-h-44 w-auto rounded border border-emerald-900/60"
+              />
+            ) : null}
+            <p className="text-xs text-emerald-200/90">
+              Selected: {imageFile.name} ({(imageFile.size / 1024).toFixed(1)} KB)
+            </p>
+          </div>
+        ) : null}
+        <p className="mt-2 text-[11px] text-emerald-200/70">Allowed: JPG/PNG, max 5MB</p>
       </div>
 
       <div className="rounded-md border border-emerald-900/50 bg-emerald-950/20 p-3 text-xs text-emerald-100/90">
