@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { BulkMessageForm } from "@/app/(admin)/admin/components/BulkMessageForm";
 import { ChatPanel } from "@/app/(admin)/admin/components/ChatPanel";
 import { QrViewer } from "@/app/(admin)/admin/components/QrViewer";
 import { SendTestForm } from "@/app/(admin)/admin/components/SendTestForm";
@@ -28,6 +29,7 @@ type ApiSuccess<T> = {
 };
 
 type ApiPayload<T> = ApiSuccess<T> | ApiFailure;
+type AdminTab = "send" | "bulk" | "chat" | "screenshot";
 
 function getApiErrorMessage<T>(payload: ApiPayload<T> | null, fallback: string) {
   if (payload && payload.ok === false && payload.error?.message) {
@@ -52,6 +54,7 @@ async function readJsonSafely<T>(response: Response): Promise<ApiPayload<T> | nu
 
 export function AdminDashboard() {
   const [state, setState] = useState<DashboardState | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTab>("send");
   const [selectedSessionId, setSelectedSessionId] = useState<string>("main");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -230,10 +233,10 @@ export function AdminDashboard() {
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl space-y-6 px-6 py-6 lg:px-10">
-      <header className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5">
+      <header className="rounded-xl border border-emerald-800/50 bg-gradient-to-r from-emerald-950/70 via-zinc-900/90 to-zinc-900/90 p-5">
         <h1 className="text-2xl font-semibold tracking-tight">WhatsApp Admin</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          Monitor session health, manage reconnects, and send test messages.
+        <p className="mt-1 text-sm text-emerald-200/80">
+          Select session and test features in separate tabs.
         </p>
       </header>
 
@@ -244,7 +247,7 @@ export function AdminDashboard() {
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-12">
-        <div className="space-y-4 rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5 lg:col-span-8">
+        <div className="space-y-4 rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-medium">Sessions</h2>
             <div className="flex items-center gap-2 rounded-lg border border-zinc-800/80 bg-zinc-950/40 p-1.5">
@@ -264,7 +267,7 @@ export function AdminDashboard() {
               <button
                 onClick={setActiveSession}
                 disabled={savingSession || !selectedSessionId}
-                className="rounded-md border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:bg-zinc-700/80 disabled:opacity-60"
+                className="rounded-md border border-emerald-700/50 bg-emerald-900/40 px-3 py-1.5 text-xs font-medium text-emerald-100 transition-colors hover:bg-emerald-800/50 disabled:opacity-60"
               >
                 Set Active
               </button>
@@ -281,7 +284,7 @@ export function AdminDashboard() {
             <button
               onClick={createSession}
               disabled={savingSession}
-              className="min-w-28 whitespace-nowrap rounded-md border border-zinc-700/60 bg-zinc-800/80 px-4 py-2 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-700/80 disabled:opacity-60"
+              className="min-w-28 whitespace-nowrap rounded-md border border-emerald-700/50 bg-emerald-900/40 px-4 py-2 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-800/50 disabled:opacity-60"
             >
               Add Session
             </button>
@@ -312,13 +315,13 @@ export function AdminDashboard() {
           <div className="flex gap-2">
             <button
               onClick={() => triggerSessionAction("reconnect")}
-              className="rounded-md border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-700/80"
+              className="rounded-md border border-emerald-700/40 bg-emerald-950/50 px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-900/60"
             >
               Reconnect
             </button>
             <button
               onClick={() => triggerSessionAction("logout")}
-              className="rounded-md border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-700/80"
+              className="rounded-md border border-emerald-700/40 bg-emerald-950/50 px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-900/60"
             >
               Logout
             </button>
@@ -328,66 +331,163 @@ export function AdminDashboard() {
         <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5 lg:col-span-4">
           <h2 className="mb-3 font-medium">QR</h2>
           <QrViewer qrDataUrl={qrDataUrl} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-emerald-800/50 bg-emerald-950/30 p-3">
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={takeScreenshot}
-            disabled={capturingScreenshot}
-            className="mt-3 rounded-md border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-sm font-medium text-zinc-100 transition-colors hover:bg-zinc-700/80 disabled:opacity-60"
+            onClick={() => setActiveTab("send")}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "send"
+                ? "border-emerald-400/60 bg-emerald-600/20 text-emerald-100"
+                : "border-emerald-900/50 bg-zinc-900/70 text-emerald-200/80 hover:bg-emerald-900/40"
+            }`}
           >
-            {capturingScreenshot ? "Capturing..." : "Take Screenshot"}
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+              Send Message
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("bulk")}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "bulk"
+                ? "border-emerald-400/60 bg-emerald-600/20 text-emerald-100"
+                : "border-emerald-900/50 bg-zinc-900/70 text-emerald-200/80 hover:bg-emerald-900/40"
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-lime-400" />
+              Bulk Messaging
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("chat")}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "chat"
+                ? "border-emerald-400/60 bg-emerald-600/20 text-emerald-100"
+                : "border-emerald-900/50 bg-zinc-900/70 text-emerald-200/80 hover:bg-emerald-900/40"
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-teal-400" />
+              Chat
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("screenshot")}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "screenshot"
+                ? "border-emerald-400/60 bg-emerald-600/20 text-emerald-100"
+                : "border-emerald-900/50 bg-zinc-900/70 text-emerald-200/80 hover:bg-emerald-900/40"
+            }`}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-green-300" />
+              Screenshot
+            </span>
           </button>
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-12">
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5 lg:col-span-5">
-          <h2 className="mb-3 font-medium">Send Test Message</h2>
-          <SendTestForm
-            sessionId={selectedSessionId}
-            onSent={async () => {
-              await loadState();
-            }}
-          />
-        </div>
+      {activeTab === "send" ? (
+        <section className="grid gap-4 lg:grid-cols-12">
+          <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-5">
+            <h2 className="mb-3 font-medium">Send Message</h2>
+            <SendTestForm
+              sessionId={selectedSessionId}
+              onSent={async () => {
+                await loadState();
+              }}
+            />
+          </div>
 
-        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5 lg:col-span-7">
-          <h2 className="mb-3 font-medium">Recent Jobs</h2>
-          <ul className="max-h-[26rem] space-y-2 overflow-auto pr-1 text-sm">
-            {(state?.jobLogs ?? []).map((job) => (
-              <li
-                key={`${job.jobId}-${job.createdAt}`}
-                className="rounded-md border border-zinc-700/60 bg-zinc-800/70 p-2.5"
-              >
-                <p className="font-medium">
-                  {job.type} · {job.status}
-                </p>
-                <p className="text-zinc-400">session: {job.sessionId}</p>
-                <p className="text-zinc-400">{job.message}</p>
-              </li>
-            ))}
-            {!state?.jobLogs?.length ? <li className="text-zinc-400">No jobs yet.</li> : null}
-          </ul>
-        </div>
-      </section>
+          <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-7">
+            <h2 className="mb-3 font-medium">Recent Jobs</h2>
+            <ul className="max-h-[26rem] space-y-2 overflow-auto pr-1 text-sm">
+              {(state?.jobLogs ?? []).map((job) => (
+                <li
+                  key={`${job.jobId}-${job.createdAt}`}
+                  className="rounded-md border border-zinc-700/60 bg-zinc-800/70 p-2.5"
+                >
+                  <p className="font-medium">
+                    {job.type} · {job.status}
+                  </p>
+                  <p className="text-zinc-400">session: {job.sessionId}</p>
+                  <p className="text-zinc-400">{job.message}</p>
+                </li>
+              ))}
+              {!state?.jobLogs?.length ? <li className="text-zinc-400">No jobs yet.</li> : null}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
-      {/* ---- Chat Panel ---- */}
-      <section>
-        <h2 className="mb-3 text-lg font-medium">Chat</h2>
-        <ChatPanel sessionId={selectedSessionId} />
-      </section>
+      {activeTab === "bulk" ? (
+        <section className="grid gap-4 lg:grid-cols-12">
+          <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-8">
+            <BulkMessageForm
+              sessionId={selectedSessionId}
+              onSent={async () => {
+                await loadState();
+              }}
+            />
+          </div>
 
-      <section className="rounded-xl border border-zinc-800/80 bg-zinc-900/80 p-5">
-        <h2 className="mb-3 font-medium">Latest WhatsApp Screenshot</h2>
-        {screenshotDataUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={screenshotDataUrl}
-            alt="WhatsApp session screenshot"
-            className="max-h-[32rem] w-full rounded-md border border-zinc-700/60 bg-zinc-800/70 object-contain"
-          />
-        ) : (
-          <p className="text-sm text-zinc-400">No screenshot captured yet.</p>
-        )}
-      </section>
+          <div className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5 lg:col-span-4">
+            <h2 className="mb-3 font-medium">Recent Jobs</h2>
+            <ul className="max-h-[26rem] space-y-2 overflow-auto pr-1 text-sm">
+              {(state?.jobLogs ?? []).map((job) => (
+                <li
+                  key={`${job.jobId}-${job.createdAt}`}
+                  className="rounded-md border border-zinc-700/60 bg-zinc-800/70 p-2.5"
+                >
+                  <p className="font-medium">
+                    {job.type} · {job.status}
+                  </p>
+                  <p className="text-zinc-400">session: {job.sessionId}</p>
+                  <p className="text-zinc-400">{job.message}</p>
+                </li>
+              ))}
+              {!state?.jobLogs?.length ? <li className="text-zinc-400">No jobs yet.</li> : null}
+            </ul>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "chat" ? (
+        <section>
+          <h2 className="mb-3 text-lg font-medium">Chat</h2>
+          <ChatPanel sessionId={selectedSessionId} />
+        </section>
+      ) : null}
+
+      {activeTab === "screenshot" ? (
+        <section className="rounded-xl border border-emerald-900/50 bg-zinc-900/80 p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="font-medium">Latest WhatsApp Screenshot</h2>
+            <button
+              onClick={takeScreenshot}
+              disabled={capturingScreenshot}
+              className="rounded-md border border-emerald-700/50 bg-emerald-900/40 px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-800/50 disabled:opacity-60"
+            >
+              {capturingScreenshot ? "Capturing..." : "Take Screenshot"}
+            </button>
+          </div>
+
+          {screenshotDataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={screenshotDataUrl}
+              alt="WhatsApp session screenshot"
+              className="max-h-[32rem] w-full rounded-md border border-zinc-700/60 bg-zinc-800/70 object-contain"
+            />
+          ) : (
+            <p className="text-sm text-zinc-400">No screenshot captured yet.</p>
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

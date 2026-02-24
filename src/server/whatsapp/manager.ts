@@ -406,6 +406,32 @@ class SessionManager {
     }));
   }
 
+  async getContacts(sessionId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contacts = await (client as any).getContacts();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return contacts.map((contact: any) => {
+      const serializedId = contact.id?._serialized ?? String(contact.id ?? "");
+      const number = contact.number || contact.userid || serializedId.split("@")[0] || "";
+
+      return {
+        id: serializedId,
+        number,
+        name: contact.name || contact.pushname || contact.shortName || number || "Unknown",
+        pushname: contact.pushname || null,
+        shortName: contact.shortName || null,
+        isBusiness: !!contact.isBusiness,
+        isEnterprise: !!contact.isEnterprise,
+        isMyContact: !!contact.isMyContact,
+        isBlocked: !!contact.isBlocked,
+        isGroup: !!contact.isGroup,
+        isWAContact: !!contact.isWAContact,
+      };
+    });
+  }
+
   async getChatMessages(sessionId: string, chatId: string, limit = 50) {
     const client = await this.ensureSession(sessionId);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -727,17 +753,66 @@ class SessionManager {
 
   async captureSessionScreenshot(sessionId: string) {
     const client = await this.ensureSession(sessionId);
-    const page = (client as unknown as { pupPage?: { screenshot: (opts: { type: "png"; encoding: "base64"; fullPage: boolean }) => Promise<string> } }).pupPage;
+    const page = (client as unknown as {
+      pupPage?: {
+        waitForSelector: (selector: string, options?: { timeout?: number }) => Promise<unknown>;
+        setViewport: (viewport: { width: number; height: number; deviceScaleFactor?: number }) => Promise<void>;
+        evaluate: <T>(fn: () => T | Promise<T>) => Promise<T>;
+        screenshot: (opts: {
+          type: "png";
+          encoding: "base64";
+          fullPage?: boolean;
+          captureBeyondViewport?: boolean;
+          clip?: { x: number; y: number; width: number; height: number };
+        }) => Promise<string>;
+      };
+    }).pupPage;
 
     if (!page) {
       throw new Error("WhatsApp page is not ready for screenshot");
     }
 
-    const base64Png = await page.screenshot({
-      type: "png",
-      encoding: "base64",
-      fullPage: true,
+    await page.setViewport({
+      width: 1920,
+      height: 1080,
+      deviceScaleFactor: 1,
     });
+
+    await page.waitForSelector("#app", { timeout: 10000 });
+
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    });
+
+    const appRect = await page.evaluate(() => {
+      const app = document.querySelector("#app") as HTMLElement | null;
+      if (!app) {
+        return null;
+      }
+
+      const rect = app.getBoundingClientRect();
+      return {
+        x: Math.max(0, rect.left + window.scrollX),
+        y: Math.max(0, rect.top + window.scrollY),
+        width: Math.max(1, Math.ceil(rect.width)),
+        height: Math.max(1, Math.ceil(rect.height)),
+      };
+    });
+
+    const base64Png = appRect
+      ? await page.screenshot({
+          type: "png",
+          encoding: "base64",
+          clip: appRect,
+          captureBeyondViewport: true,
+        })
+      : await page.screenshot({
+          type: "png",
+          encoding: "base64",
+          fullPage: true,
+        });
 
     return `data:image/png;base64,${base64Png}`;
   }
