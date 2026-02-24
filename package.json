@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n web,worker -c green,cyan \"next dev\" \"npm run dev:worker\"",
+    "dev": "concurrently -n web,worker -c green,cyan \"next dev\" \"pnpm run dev:worker\"",
     "dev:web": "next dev",
     "dev:worker": "tsx src/server/queue/worker.ts",
     "build": "next build",
-    "start": "concurrently -n web,worker -c green,cyan \"npm run start:web\" \"npm run worker\"",
+    "start": "concurrently -n web,worker -c green,cyan \"pnpm run start:web\" \"pnpm run worker\"",
     "start:web": "next start",
     "worker": "tsx src/server/queue/worker.ts",
     "lint": "eslint"
@@ -21,6 +21,7 @@
     "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-icons": "^5.5.0",
     "swagger-ui-dist": "^5.31.1",
     "swagger-ui-react": "^5.31.1",
     "whatsapp-web.js": "^1.34.6",

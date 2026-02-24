@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
-import { MessageMedia } from "whatsapp-web.js";
+import { Location, MessageMedia, Poll } from "whatsapp-web.js";
 
 import { statusStore } from "@/server/store/statusStore";
 import { createWwebjsClient, resolveDataPath } from "@/server/whatsapp/client";
@@ -360,6 +360,67 @@ class SessionManager {
     return client.sendMessage(chatId, text);
   }
 
+  async sendLocation(
+    sessionId: string,
+    to: string,
+    latitude: number,
+    longitude: number,
+    description?: string,
+  ) {
+    const client = await this.ensureSession(sessionId);
+    const chatId = toWhatsAppChatId(to);
+    const location = new Location(
+      latitude,
+      longitude,
+      description ? { name: description } : undefined,
+    );
+    return client.sendMessage(chatId, location);
+  }
+
+  async sendPoll(
+    sessionId: string,
+    to: string,
+    pollName: string,
+    options: string[],
+    allowMultiple = false,
+  ) {
+    const client = await this.ensureSession(sessionId);
+    const chatId = toWhatsAppChatId(to);
+    const poll = new Poll(pollName, options, {
+      allowMultipleAnswers: allowMultiple,
+      messageSecret: undefined,
+    });
+    return client.sendMessage(chatId, poll);
+  }
+
+  async sendContactCard(sessionId: string, to: string, contactId: string) {
+    const client = await this.ensureSession(sessionId);
+    const toChatId = toWhatsAppChatId(to);
+    const normalizedContactId = this.normalizeContactId(contactId);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+    if (typeof targetClient.getContactById !== "function") {
+      throw new Error("Contact APIs are not supported by this client version");
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contact = await targetClient.getContactById(normalizedContactId) as any;
+    return client.sendMessage(toChatId, contact);
+  }
+
+  async rejectCall(sessionId: string, callId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+
+    if (typeof targetClient.rejectCall === "function") {
+      return targetClient.rejectCall(callId);
+    }
+
+    throw new Error("Reject call is not supported by this client version");
+  }
+
   async sendMedia(params: {
     sessionId: string;
     to: string;
@@ -430,6 +491,153 @@ class SessionManager {
         isWAContact: !!contact.isWAContact,
       };
     });
+  }
+
+  async getContactById(sessionId: string, contactId: string) {
+    const client = await this.ensureSession(sessionId);
+    const normalizedContactId = this.normalizeContactId(contactId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+
+    if (typeof targetClient.getContactById !== "function") {
+      throw new Error("Contact APIs are not supported by this client version");
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contact = await targetClient.getContactById(normalizedContactId) as any;
+    const serializedId = contact.id?._serialized ?? String(contact.id ?? normalizedContactId);
+    const number = contact.number || contact.userid || serializedId.split("@")[0] || "";
+
+    return {
+      id: serializedId,
+      number,
+      name: contact.name || contact.pushname || contact.shortName || number || "Unknown",
+      pushname: contact.pushname || null,
+      shortName: contact.shortName || null,
+      isBusiness: !!contact.isBusiness,
+      isEnterprise: !!contact.isEnterprise,
+      isMyContact: !!contact.isMyContact,
+      isBlocked: !!contact.isBlocked,
+      isGroup: !!contact.isGroup,
+      isWAContact: !!contact.isWAContact,
+    };
+  }
+
+  async getProfilePicUrl(sessionId: string, contactId: string) {
+    const client = await this.ensureSession(sessionId);
+    const normalizedContactId = this.normalizeContactId(contactId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+
+    if (typeof targetClient.getProfilePicUrl === "function") {
+      return targetClient.getProfilePicUrl(normalizedContactId);
+    }
+
+    throw new Error("Profile picture API is not supported by this client version");
+  }
+
+  async getContactAbout(sessionId: string, contactId: string) {
+    const client = await this.ensureSession(sessionId);
+    const normalizedContactId = this.normalizeContactId(contactId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+
+    if (typeof targetClient.getContactById !== "function") {
+      throw new Error("Contact APIs are not supported by this client version");
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contact = await targetClient.getContactById(normalizedContactId) as any;
+    if (typeof contact?.getAbout === "function") {
+      return contact.getAbout();
+    }
+
+    if (typeof targetClient.getStatus === "function") {
+      return targetClient.getStatus(normalizedContactId);
+    }
+
+    throw new Error("Contact about API is not supported by this client version");
+  }
+
+  async createGroup(sessionId: string, title: string, participants: string[]) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+    if (typeof targetClient.createGroup !== "function") {
+      throw new Error("Create group is not supported by this client version");
+    }
+
+    return targetClient.createGroup(
+      title,
+      participants.map((participant) => this.normalizeContactId(participant)),
+    );
+  }
+
+  async getGroupChat(sessionId: string, chatId: string) {
+    const client = await this.ensureSession(sessionId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chat = await (client as any).getChatById(chatId);
+
+    if (!chat?.isGroup) {
+      throw new Error("Chat is not a group");
+    }
+
+    return {
+      id: chat.id?._serialized ?? String(chat.id),
+      name: chat.name || chat.formattedTitle || chat.id?.user || "Unknown",
+      description: chat.description ?? null,
+      participantsCount: Array.isArray(chat.participants) ? chat.participants.length : 0,
+      owner: chat.owner?._serialized ?? chat.owner ?? null,
+      createdAt: chat.createdAt ?? null,
+      isReadOnly: !!chat.isReadOnly,
+      isAnnounce: !!chat.isAnnounce,
+    };
+  }
+
+  private normalizeContactId(contactId: string) {
+    return contactId.includes("@") ? contactId : toWhatsAppChatId(contactId);
+  }
+
+  async blockContact(sessionId: string, contactId: string) {
+    const client = await this.ensureSession(sessionId);
+    const normalizedContactId = this.normalizeContactId(contactId);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+    if (typeof targetClient.getContactById === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contact = await targetClient.getContactById(normalizedContactId) as any;
+      if (typeof contact?.block === "function") {
+        return contact.block();
+      }
+    }
+
+    if (typeof targetClient.blockContact === "function") {
+      return targetClient.blockContact(normalizedContactId);
+    }
+
+    throw new Error("Block contact is not supported by this client version");
+  }
+
+  async unblockContact(sessionId: string, contactId: string) {
+    const client = await this.ensureSession(sessionId);
+    const normalizedContactId = this.normalizeContactId(contactId);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetClient = client as any;
+    if (typeof targetClient.getContactById === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contact = await targetClient.getContactById(normalizedContactId) as any;
+      if (typeof contact?.unblock === "function") {
+        return contact.unblock();
+      }
+    }
+
+    if (typeof targetClient.unblockContact === "function") {
+      return targetClient.unblockContact(normalizedContactId);
+    }
+
+    throw new Error("Unblock contact is not supported by this client version");
   }
 
   async getChatMessages(sessionId: string, chatId: string, limit = 50) {

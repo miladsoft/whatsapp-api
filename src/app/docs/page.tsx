@@ -9,6 +9,7 @@ export default function DocsPage() {
 
   useEffect(() => {
     let disposed = false;
+    const mountNode = mountRef.current;
 
     const setup = async () => {
       const [{ default: SwaggerUIBundle }, { default: SwaggerUIStandalonePreset }] =
@@ -17,11 +18,11 @@ export default function DocsPage() {
           import("swagger-ui-dist/swagger-ui-standalone-preset"),
         ]);
 
-      if (disposed || !mountRef.current) return;
+      if (disposed || !mountNode) return;
 
       SwaggerUIBundle({
         url: "/api/openapi",
-        domNode: mountRef.current,
+        domNode: mountNode,
         docExpansion: "list",
         defaultModelsExpandDepth: 1,
         displayRequestDuration: true,
@@ -35,15 +36,15 @@ export default function DocsPage() {
 
     return () => {
       disposed = true;
-      if (mountRef.current) {
-        mountRef.current.innerHTML = "";
+      if (mountNode) {
+        mountNode.innerHTML = "";
       }
     };
   }, []);
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-4 md:px-8 md:py-8">
-      <div className="mx-auto w-full max-w-screen-2xl overflow-hidden rounded-xl border border-zinc-800 bg-white">
+    <main className="min-h-screen bg-background px-4 py-4 md:px-8 md:py-8">
+      <div className="mx-auto w-full max-w-screen-2xl overflow-hidden rounded-xl border border-zinc-300 bg-white dark:border-zinc-800">
         <div ref={mountRef} />
       </div>
     </main>

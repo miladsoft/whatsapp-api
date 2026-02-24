@@ -343,24 +343,6 @@ export function BulkMessageForm({ sessionId, onSent }: BulkMessageFormProps) {
         <p className="mt-2 text-[11px] text-emerald-200/70">Allowed: JPG/PNG, max 5MB</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={sendSequential}
-          disabled={sending || !selectedIds.length}
-          className="rounded-md border border-emerald-600/50 bg-emerald-900/50 px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-800/60 disabled:opacity-60"
-        >
-          {sending ? "Sending..." : "● Send One by One"}
-        </button>
-        <button
-          onClick={sendBroadcast}
-          disabled={sending || !selectedIds.length}
-          className="rounded-md border border-lime-500/40 bg-lime-900/30 px-3 py-1.5 text-sm font-medium text-lime-100 transition-colors hover:bg-lime-800/40 disabled:opacity-60"
-        >
-          {sending ? "Sending..." : "◉ Send Broadcast"}
-        </button>
-        <span className="text-xs text-emerald-200/80">Selected: {selectedIds.length}</span>
-      </div>
-
       <div className="rounded-lg border border-emerald-900/50 bg-emerald-950/20 p-3">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <input
@@ -422,6 +404,24 @@ export function BulkMessageForm({ sessionId, onSent }: BulkMessageFormProps) {
               ) : null}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={sendSequential}
+            disabled={sending || !selectedIds.length}
+            className="rounded-md border border-emerald-600/50 bg-emerald-900/50 px-3 py-1.5 text-sm font-medium text-emerald-100 transition-colors hover:bg-emerald-800/60 disabled:opacity-60"
+          >
+            {sending ? "Sending..." : "● Send One by One"}
+          </button>
+          <button
+            onClick={sendBroadcast}
+            disabled={sending || !selectedIds.length}
+            className="rounded-md border border-lime-500/40 bg-lime-900/30 px-3 py-1.5 text-sm font-medium text-lime-100 transition-colors hover:bg-lime-800/40 disabled:opacity-60"
+          >
+            {sending ? "Sending..." : "◉ Send Broadcast"}
+          </button>
+          <span className="text-xs text-emerald-200/80">Selected: {selectedIds.length}</span>
         </div>
       </div>
 

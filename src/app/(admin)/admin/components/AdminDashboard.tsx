@@ -8,6 +8,7 @@ import { ChatPanel } from "@/app/(admin)/admin/components/ChatPanel";
 import { QrViewer } from "@/app/(admin)/admin/components/QrViewer";
 import { SendTestForm } from "@/app/(admin)/admin/components/SendTestForm";
 import { StatusBadge } from "@/app/(admin)/admin/components/StatusBadge";
+import { ThemeToggle } from "@/app/components/ThemeToggle";
 import type { JobLog, SessionState } from "@/server/store/statusStore";
 
 type DashboardState = {
@@ -234,11 +235,16 @@ export function AdminDashboard() {
 
   return (
     <div className="mx-auto w-full max-w-screen-2xl space-y-6 px-6 py-6 lg:px-10">
-      <header className="rounded-xl border border-emerald-800/50 bg-gradient-to-r from-emerald-950/70 via-zinc-900/90 to-zinc-900/90 p-5">
-        <h1 className="text-2xl font-semibold tracking-tight">WhatsApp Admin</h1>
-        <p className="mt-1 text-sm text-emerald-200/80">
-          Select session and test features in separate tabs.
-        </p>
+      <header className="rounded-xl border border-emerald-300/80 bg-gradient-to-r from-emerald-100 via-zinc-50 to-zinc-100 p-5 dark:border-emerald-800/50 dark:from-emerald-950/70 dark:via-zinc-900/90 dark:to-zinc-900/90">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">WhatsApp Admin</h1>
+            <p className="mt-1 text-sm text-emerald-700 dark:text-emerald-200/80">
+              Select session and test features in separate tabs.
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
       </header>
 
       {error ? (

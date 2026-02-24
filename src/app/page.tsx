@@ -8,13 +8,13 @@ export default function Home() {
       <div className="mt-6 flex flex-wrap gap-3">
         <a
           href="/admin"
-          className="inline-flex w-fit rounded-md bg-foreground px-4 py-2 text-sm text-background"
+          className="inline-flex w-fit rounded-md bg-foreground px-4 py-2 text-sm text-background shadow-sm"
         >
           Open Admin Dashboard
         </a>
         <a
           href="/docs"
-          className="inline-flex w-fit rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-200"
+          className="inline-flex w-fit rounded-md border border-zinc-700/60 bg-zinc-900/70 px-4 py-2 text-sm text-zinc-200 transition-colors hover:bg-zinc-800/80"
         >
           Open API Docs (Swagger)
         </a>
