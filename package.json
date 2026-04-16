@@ -23,7 +23,7 @@
     "react-dom": "19.2.3",
     "react-icons": "^5.5.0",
     "swagger-ui-dist": "^5.31.1",
-    "swagger-ui-react": "^5.31.1",
+    "swagger-ui-react": "^5.32.4",
     "whatsapp-web.js": "^1.34.6",
     "zod": "^4.3.6"
   },
